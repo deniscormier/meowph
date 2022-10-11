@@ -19,6 +19,13 @@ GLOBAL OPTIONS:
    --help, -h  show help (default: false)
 ```
 
+## Installation
+
+```sh
+# Prerequisite: go installation
+go install github.com/deniscormier/meowph@latest
+```
+
 ## Example usage
 
 ``` sh
