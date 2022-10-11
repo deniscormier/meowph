@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 )
 
@@ -17,12 +18,14 @@ type Flags struct {
 	dryRun *cli.BoolFlag
 	from   *cli.TimestampFlag
 	to     *cli.TimestampFlag
+	target *cli.PathFlag
 }
 
 type Options struct {
 	dryRun bool
 	from   *time.Time
 	to     *time.Time
+	target string
 }
 
 func main() {
@@ -44,16 +47,12 @@ func main() {
 			Timezone: time.Local,
 			Usage:    "targeting files before (or equal to) a photo-taken timestamp",
 		},
-		// -folder -f (optional, default: working directory): target folder (absolute path or relative to working directory)
-
-		// Future work: distinguish between recursive and non-recursive
-		// For now, it'll be recursive and scan all sub-folders
-		// &cli.BoolFlag{
-		// 	Name:        "recursive",
-		// 	Aliases:     []string{"r"},
-		// 	Usage:       "target files in subfolders of target folders",
-		// 	Destination: &options.recursive,
-		// },
+		target: &cli.PathFlag{
+			Name:      "target",
+			Value:     ".",
+			TakesFile: true,
+			Usage:     "target folder, an absolute path or relative to working directory (default: working directory)",
+		},
 	}
 
 	app := &cli.App{
@@ -68,22 +67,12 @@ func main() {
 					flags.to,
 				},
 				Action: func(cCtx *cli.Context) error {
+					cmdPaths := cCtx.Args().Slice()
 					options := Options{
 						from: flags.from.Get(cCtx),
 						to:   flags.to.Get(cCtx),
 					}
-					paths := cCtx.Args().Slice()
-					if len(paths) == 0 {
-						paths = []string{"."}
-					}
-					for _, path := range paths {
-						path, err := filepath.Abs(path)
-						ifErrFatal(err)
-
-						err = filepath.Walk(path, handleQuery(options))
-						ifErrFatal(err)
-					}
-					return nil
+					return handleQuery(cmdPaths, options)
 				},
 			},
 			{
@@ -101,30 +90,19 @@ func main() {
 						from:   flags.from.Get(cCtx),
 						to:     flags.to.Get(cCtx),
 					}
-					paths := cCtx.Args().Slice()
-					if len(paths) == 0 {
-						paths = []string{"."}
-					}
-					for _, path := range paths {
-						path, err := filepath.Abs(path)
-						ifErrFatal(err)
-
-						err = filepath.Walk(path, handleRename(options))
-						ifErrFatal(err)
-					}
-					return nil
+					cmdPaths := cCtx.Args().Slice()
+					return handleRename(cmdPaths, options)
 				},
 			},
 			{
-				Name:    "move-wd",
+				Name:    "move",
 				Aliases: []string{"m"},
-				Usage:   "move image files into the working directory",
+				Usage:   "move image files into target directory",
 				Flags: []cli.Flag{
 					flags.dryRun,
 					flags.from,
 					flags.to,
-					// Future work:
-					// -folder -f (optional, default: working directory): target folder (absolute path or relative to working directory)
+					flags.target,
 				},
 				Action: func(cCtx *cli.Context) error {
 					options := Options{
@@ -132,28 +110,20 @@ func main() {
 						from:   flags.from.Get(cCtx),
 						to:     flags.to.Get(cCtx),
 					}
-					paths := cCtx.Args().Slice()
-					if len(paths) == 0 {
-						paths = []string{"."}
+					cmdTargetPath := flags.target.Get(cCtx)
+					var err error
+					options.target, err = filepath.Abs(cmdTargetPath)
+					if err != nil {
+						return errors.Wrapf(err, "failure converting target path %s to absolute path", cmdTargetPath)
 					}
-					for _, path := range paths {
-						path, err := filepath.Abs(path)
-						ifErrFatal(err)
-
-						err = filepath.Walk(path, handleMove(options))
-						ifErrFatal(err)
-					}
-					return nil
+					cmdPaths := cCtx.Args().Slice()
+					return handleMove(cmdPaths, options)
 				},
 			},
 		},
 	}
 
 	err := app.Run(os.Args)
-	ifErrFatal(err)
-}
-
-func ifErrFatal(err error) {
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
